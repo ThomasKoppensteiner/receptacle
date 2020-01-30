@@ -205,6 +205,20 @@ class ReceptacleTest < Minitest::Test
       [Fixtures::Strategy::Two, :d, "test"],
       [Fixtures::Wrapper::AfterAll, :after_d, "test", "test_in_block"]
     ], callstack
+    clear_callstack
+
+    assert_equal 300 + 21, receptacle.e(17,4)
+    assert_equal [
+      [Fixtures::Strategy::Two, :e, [17, 4]],
+      [Fixtures::Wrapper::AfterAll, :after_e, [17, 4], 21]
+    ], callstack
+    clear_callstack
+
+    assert_equal true, receptacle.f
+    assert_equal [
+      [Fixtures::Strategy::Two, :f],
+      [Fixtures::Wrapper::AfterAll, :after_f, false]
+    ], callstack
   end
 
   def test_before_and_after_wrapper

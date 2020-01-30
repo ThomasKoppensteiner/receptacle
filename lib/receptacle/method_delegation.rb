@@ -4,6 +4,8 @@ require "receptacle/method_cache"
 require "receptacle/registration"
 require "receptacle/errors"
 
+require "pry"
+
 module Receptacle
   # module which enables a repository to mediate methods dynamically to wrappers and strategy
   # @api private
@@ -27,10 +29,14 @@ module Receptacle
       method_cache = __build_method_call_cache(method_name)
       if method_cache.wrappers.nil? || method_cache.wrappers.empty?
         __define_shortcut_method(method_cache)
-      elsif method_cache.arity.abs > 1
-        __define_full_method_high_arity(method_cache)
+      # elsif method_cache.arity.abs > 1
+      #   __define_full_method_high_arity(method_cache)
+      # elsif method_cache.arity == 0
+      #   __define_full_method_arity_zero(method_cache)
+      # else
+      #   __define_full_method(method_cache)
       else
-        __define_full_method(method_cache)
+        __define_full_method_2(method_cache)
       end
     end
 
@@ -69,6 +75,18 @@ module Receptacle
       end
     end
 
+    def __define_full_method_2(method_cache)
+      define_singleton_method(method_cache.method_name) do |*args, &inner_block|
+        abs_arity = method_cache.arity.abs
+
+
+
+        __run_wrappers_2(method_cache, abs_arity, *args) do |*call_args|
+          method_cache.strategy.new.public_send(method_cache.method_name, *call_args, &inner_block)
+        end
+      end
+    end
+
     # build method to mediate method calls of higher arity to strategy with full wrapper support
     # @param method_cache [MethodCache] method_cache of the method to be build
     # @return [void]
@@ -99,21 +117,49 @@ module Receptacle
       __run_after_wrappers(wrappers, method_cache.after_method_name, args, ret, high_arity)
     end
 
+    def __run_wrappers_2(method_cache, abs_arity, *input_args)
+      wrappers = method_cache.wrappers.map(&:new)
+
+      # binding.pry
+      args =
+        if method_cache.skip_before_wrappers?
+          input_args
+        else
+          __run_before_wrappers(wrappers, method_cache.before_method_name, abs_arity, *input_args)
+        end
+      # ret = high_arity ? yield(*args) : yield(args)
+      # binding.pry
+      ret = if abs_arity == 0
+        yield
+      elsif abs_arity == 1
+        yield(args)
+      else
+        yield(*args)
+      end
+      return ret if method_cache.skip_after_wrappers?
+
+      __run_after_wrappers(wrappers, method_cache.after_method_name, ret, abs_arity, *args)
+    end
+
     # runtime method to execute all before wrappers
     # @param wrappers [Array] all wrapper instances to be executed
     # @param method_name [Symbol] name of method to be executed on wrappers
     # @param args input args of the repository method
     # @param high_arity [Boolean] if are intended for a higher arity method
     # @return processed method args by before wrappers
-    def __run_before_wrappers(wrappers, method_name, args, high_arity = false)
+    def __run_before_wrappers(wrappers, method_name, abs_arity, *args)
       wrappers.each do |wrapper|
         next unless wrapper.respond_to?(method_name)
 
-        args = if high_arity
-                 wrapper.public_send(method_name, *args)
-               else
-                 wrapper.public_send(method_name, args)
-               end
+        args = if abs_arity == 0
+          wrapper.public_send(method_name)
+        # elsif abs_arity == 1 && !args.is_a?(Array)
+        #   wrapper.public_send(method_name, args)
+        # else
+        #   wrapper.public_send(method_name, *args)
+        else
+          wrapper.public_send(method_name, *args)
+        end
       end
       args
     end
@@ -125,14 +171,32 @@ module Receptacle
     # @param return_value return value of strategy method
     # @param high_arity [Boolean] if are intended for a higher arity method
     # @return processed return value by all after wrappers
-    def __run_after_wrappers(wrappers, method_name, args, return_value, high_arity = false)
+    def __run_after_wrappers(wrappers, method_name, abs_arity, return_value, *args)
       wrappers.reverse_each do |wrapper|
         next unless wrapper.respond_to?(method_name)
 
-        return_value = if high_arity
-                         wrapper.public_send(method_name, return_value, *args)
+        # return_value = if high_arity
+        #                  wrapper.public_send(method_name, return_value, *args)
+        #                else
+        #                  wrapper.public_send(method_name, return_value, args)
+        #                end
+
+                       # return_value = case abs_arity
+                       # when 0
+                       #   wrapper.public_send(method_name, return_value)
+                       # when 1
+                       #   wrapper.public_send(method_name, return_value, args)
+                       # else
+                       #   wrapper.public_send(method_name, return_value, *args)
+                       # end
+
+
+                       return_value = if abs_arity == 0
+                         wrapper.public_send(method_name, return_value)
+                       # elsif abs_arity == 1 && !args.is_a?(Array)
+                       #   wrapper.public_send(method_name, return_value, args)
                        else
-                         wrapper.public_send(method_name, return_value, args)
+                         wrapper.public_send(method_name, return_value, *args)
                        end
       end
       return_value
